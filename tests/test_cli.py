@@ -15,11 +15,14 @@ def test_custom_transformers_model_arguments() -> None:
             "organization/custom-whisper",
             "--language",
             "ar",
+            "--initial-prompt",
+            "نص عربي بعلامات ترقيم.",
         ]
     )
     assert args.backend == "transformers"
     assert args.model == "organization/custom-whisper"
     assert args.language == "ar"
+    assert args.initial_prompt == "نص عربي بعلامات ترقيم."
 
 
 def test_local_ctranslate2_model_arguments() -> None:

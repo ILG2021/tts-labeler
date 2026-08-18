@@ -44,6 +44,11 @@ def _add_run_options(parser: argparse.ArgumentParser) -> None:
         help="Built-in model name, Hugging Face model ID, or local model directory",
     )
     parser.add_argument("--language", default="auto")
+    parser.add_argument(
+        "--initial-prompt",
+        default=None,
+        help="Optional Whisper context prompt for vocabulary and punctuation style",
+    )
     parser.add_argument("--device", default="auto")
     parser.add_argument("--compute-type", default="auto")
     parser.add_argument("--beam-size", type=int, default=5)
@@ -121,6 +126,7 @@ def _config(args: argparse.Namespace) -> PipelineConfig:
         **common,
         model=args.model,
         language=None if args.language.lower() == "auto" else args.language,
+        initial_prompt=args.initial_prompt,
         asr_backend=args.backend,
         device=args.device,
         compute_type=args.compute_type,

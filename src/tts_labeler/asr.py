@@ -31,6 +31,7 @@ class FasterWhisperBackend:
         segments, info = self.model.transcribe(
             str(audio),
             language=self.config.language,
+            initial_prompt=self.config.initial_prompt,
             beam_size=self.config.beam_size,
             word_timestamps=False,
             vad_filter=True,
@@ -113,6 +114,11 @@ class TransformersWhisperBackend:
         model.to(device)
         processor = AutoProcessor.from_pretrained(config.model)
         self.config = config
+        self.prompt_ids = None
+        if config.initial_prompt:
+            self.prompt_ids = processor.get_prompt_ids(
+                config.initial_prompt, return_tensors="pt"
+            ).to(model.device)
         self.pipe = pipeline(
             "automatic-speech-recognition",
             model=model,
@@ -126,6 +132,8 @@ class TransformersWhisperBackend:
         generate_kwargs = {"task": "transcribe"}
         if self.config.language:
             generate_kwargs["language"] = self.config.language
+        if self.prompt_ids is not None:
+            generate_kwargs["prompt_ids"] = self.prompt_ids
         result = self.pipe(
             str(audio),
             return_timestamps=True,

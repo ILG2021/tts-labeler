@@ -162,6 +162,7 @@ tts-labeler run input.wav output --document document.txt `
   --backend faster-whisper `
   --model large-v3 `
   --language auto `
+  --initial-prompt "以下内容为普通话朗读，使用规范中文标点。" `
   --device cuda `
   --compute-type float16
 ```
@@ -170,6 +171,14 @@ tts-labeler run input.wav output --document document.txt `
 
 ```powershell
 tts-labeler --verbose run input.wav output --document document.txt
+```
+
+`--initial-prompt` 用于向 Whisper 提供固定的术语和书写风格上下文，支持 faster-whisper 和 Transformers 微调模型。默认不传入任何提示词。为了保证批量结果一致，应为同一批任务使用完全相同的提示词；提示词会写入配置报告和任务指纹。
+
+```powershell
+tts-labeler run input.wav output `
+  --language zh `
+  --initial-prompt "以下内容为普通话朗读，使用规范中文标点。"
 ```
 
 ### 过滤其他说话人

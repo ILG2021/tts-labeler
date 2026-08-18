@@ -86,6 +86,7 @@ class OutputSegment:
 @dataclass(frozen=True)
 class PipelineConfig:
     language: str | None = None
+    initial_prompt: str | None = None
     model: str = "large-v3"
     asr_backend: str = "faster-whisper"
     device: str = "auto"
