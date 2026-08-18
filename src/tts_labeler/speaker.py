@@ -3,11 +3,13 @@ from __future__ import annotations
 import logging
 import math
 import os
+import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 from .models import PipelineConfig
+from .audio import require_ffmpeg
 
 
 LOGGER = logging.getLogger(__name__)
@@ -109,7 +111,50 @@ class PyannoteSpeakerAnalyzer:
             ) from exc
         if config.device != "cpu" and torch.cuda.is_available():
             self.pipeline.to(torch.device("cuda"))
+        self.torch = torch
         self.config = config
+
+    def _waveform_input(self, audio: Path) -> dict[str, Any]:
+        """Decode through FFmpeg and pass a waveform dict to pyannote.
+
+        pyannote.audio 4.x may select torchcodec for path inputs. A successful
+        `import torchcodec` does not guarantee that its native FFmpeg decoder
+        can load the installed runtime, so this deliberately avoids path input.
+        """
+        command = [
+            require_ffmpeg(),
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-nostdin",
+            "-i",
+            str(audio),
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-f",
+            "s16le",
+            "-acodec",
+            "pcm_s16le",
+            "pipe:1",
+        ]
+        try:
+            result = subprocess.run(command, check=True, capture_output=True)
+        except FileNotFoundError as exc:
+            raise RuntimeError(
+                "FFmpeg is required for speaker analysis fallback but was not found on PATH"
+            ) from exc
+        except subprocess.CalledProcessError as exc:
+            detail = exc.stderr.decode("utf-8", errors="replace").strip()
+            raise RuntimeError(f"FFmpeg could not decode speaker audio {audio}: {detail}") from exc
+        samples = self.torch.frombuffer(
+            memoryview(result.stdout), dtype=self.torch.int16
+        ).clone()
+        waveform = samples.to(dtype=self.torch.float32).div_(32768.0).reshape(1, -1)
+        if waveform.shape[1] == 0:
+            raise RuntimeError(f"Speaker audio is empty: {audio}")
+        return {"waveform": waveform, "sample_rate": 16000}
 
     @staticmethod
     def _unpack(output: Any) -> tuple[list[SpeakerTurn], dict[str, Any]]:
@@ -126,7 +171,7 @@ class PyannoteSpeakerAnalyzer:
         return turns, embeddings
 
     def _run(self, audio: Path) -> tuple[list[SpeakerTurn], dict[str, Any]]:
-        return self._unpack(self.pipeline(str(audio)))
+        return self._unpack(self.pipeline(self._waveform_input(audio)))
 
     def analyze(
         self, audio: Path, reference: Path | None = None
