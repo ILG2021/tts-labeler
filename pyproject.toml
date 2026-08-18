@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tts-labeler"
+version = "0.1.0"
+description = "Document-guided, pause-aware long-form audio segmentation for TTS datasets"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "tts-labeler contributors" }]
+dependencies = []
+
+[project.optional-dependencies]
+asr = ["faster-whisper>=1.1.0"]
+transformers = ["transformers>=4.45", "torch>=2.2", "accelerate>=0.34"]
+vad = ["silero-vad>=6.0,<7", "onnxruntime>=1.16.1"]
+speaker = ["pyannote.audio>=4.0,<5", "torch>=2.2"]
+industrial = [
+  "faster-whisper>=1.1.0",
+  "silero-vad>=6.0,<7",
+  "onnxruntime>=1.16.1",
+  "pyannote.audio>=4.0,<5",
+  "torch>=2.2",
+]
+all-asr = [
+  "faster-whisper>=1.1.0",
+  "transformers>=4.45",
+  "torch>=2.2",
+  "accelerate>=0.34",
+  "silero-vad>=6.0,<7",
+  "onnxruntime>=1.16.1",
+  "pyannote.audio>=4.0,<5",
+]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[project.scripts]
+tts-labeler = "tts_labeler.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
