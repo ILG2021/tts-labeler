@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 
 from .asr import FasterWhisperBackend, JsonASRBackend, TransformersWhisperBackend
+from .batch import BatchLabelingPipeline
 from .models import PipelineConfig
 from .pipeline import LabelingPipeline
 
@@ -88,7 +89,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--document",
         type=Path,
-        help="Optional reference document; alignment is skipped when omitted",
+        help="Optional document file, or a same-layout .txt directory for folder input",
     )
     _add_output_options(run)
     _add_run_options(run)
@@ -165,9 +166,13 @@ def main(argv: list[str] | None = None) -> int:
         backend = TransformersWhisperBackend(config)
     else:
         backend = FasterWhisperBackend(config)
-    LabelingPipeline(config, backend).run(
-        args.audio, args.document, args.output, args.speaker_reference
-    )
+    pipeline = LabelingPipeline(config, backend)
+    if args.audio.is_dir():
+        result = BatchLabelingPipeline(pipeline).run(
+            args.audio, args.document, args.output, args.speaker_reference
+        )
+        return 1 if result.failed else 0
+    pipeline.run(args.audio, args.document, args.output, args.speaker_reference)
     return 0
 
 

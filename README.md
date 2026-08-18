@@ -210,6 +210,29 @@ tts-labeler run input.wav output
 
 该模式仍执行声学切分、ASR、音频质量检查和数据集导出，生成 `raw.srt`，但不会生成 `aligned.srt`。建议先在字幕软件中核对 `raw.srt`，再使用 `export` 导出最终数据集。
 
+### 文件夹批处理
+
+`run` 的输入可以是单个文件，也可以是文件夹。文件夹会递归扫描 `.wav`、`.mp3`、`.flac`、`.m4a`、`.ogg`、`.opus` 和 `.aac`：
+
+```powershell
+tts-labeler run input-audio-folder output
+```
+
+模型只加载一次，每个源文件使用独立状态、缓存和失败记录，最终汇总为一个数据集。某个文件失败不会阻止后续文件处理；命令最终返回非零状态，并在总 `report.json` 的 `failures` 中记录原因。
+
+有文档时，`--document` 指向文档目录，目录结构与音频目录一致，文件扩展名改为 `.txt`：
+
+```text
+audio/章节一/文件1.wav  ↔  documents/章节一/文件1.txt
+audio/章节二/文件2.flac ↔  documents/章节二/文件2.txt
+```
+
+```powershell
+tts-labeler run audio output --document documents
+```
+
+找不到同名文档的音频仍按无文档模式处理，并记录在 `missing_documents`。为避免 `wavs/文件名/` 冲突，批次内不允许出现两个同名但路径或扩展名不同的源文件。
+
 ## 常用切分参数
 
 ```powershell
