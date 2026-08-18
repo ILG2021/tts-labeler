@@ -57,7 +57,6 @@ def _add_run_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--min-silence", type=float, default=0.32)
     parser.add_argument("--silence-margin-db", type=float, default=10.0)
     parser.add_argument("--silence-dbfs", type=float, default=-38.0)
-    parser.add_argument("--boundary-padding", type=float, default=0.08)
     parser.add_argument("--max-silence-kept", type=float, default=0.5)
     parser.add_argument(
         "--vad",
@@ -136,7 +135,6 @@ def _config(args: argparse.Namespace) -> PipelineConfig:
         min_silence_duration=args.min_silence,
         silence_margin_db=args.silence_margin_db,
         absolute_silence_dbfs=args.silence_dbfs,
-        boundary_padding=args.boundary_padding,
         max_silence_kept=args.max_silence_kept,
         vad_backend=args.vad,
         vad_threshold=args.vad_threshold,

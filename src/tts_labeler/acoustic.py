@@ -167,10 +167,13 @@ def _fallback_candidates(
     frame_seconds: float,
     rate: int,
     total_samples: int,
+    silence_threshold: float,
     config: PipelineConfig,
 ) -> list[CutCandidate]:
     result: list[CutCandidate] = []
-    effective_max = max(config.min_duration, config.max_duration - 2 * config.boundary_padding)
+    effective_max = max(
+        config.min_duration, config.max_duration - config.leading_silence - config.trailing_silence
+    )
     effective_target = min(config.target_duration, effective_max)
     search_radius = min(
         config.max_boundary_search,
@@ -183,10 +186,22 @@ def _fallback_candidates(
         first = max(0, math.floor(lower / frame_seconds))
         last = min(len(levels), max(first + 1, math.ceil(upper / frame_seconds)))
         frame = _quiet_frame(levels, first, last)
+        pause_start_frame = frame
+        pause_end_frame = frame + 1
+        while pause_start_frame > 0 and levels[pause_start_frame - 1] <= silence_threshold:
+            pause_start_frame -= 1
+        while pause_end_frame < len(levels) and levels[pause_end_frame] <= silence_threshold:
+            pause_end_frame += 1
         target = min(total_samples - 1, frame * frame_size + frame_size // 2)
         sample = _nearest_zero(path, target, max(1, round(rate * 0.005)), total_samples)
         result.append(
-            CutCandidate(sample / rate, sample / rate, sample / rate, levels[frame], "fallback")
+            CutCandidate(
+                sample / rate,
+                pause_start_frame * frame_seconds,
+                min(total_samples / rate, pause_end_frame * frame_seconds),
+                levels[frame],
+                "fallback",
+            )
         )
         ideal += effective_target
     return result
@@ -209,7 +224,9 @@ def _select_boundaries(
 ) -> list[CutCandidate]:
     """Shortest-path segmentation with hard duration constraints."""
     count = len(candidates)
-    effective_max = max(config.min_duration, config.max_duration - 2 * config.boundary_padding)
+    effective_max = max(
+        config.min_duration, config.max_duration - config.leading_silence - config.trailing_silence
+    )
     effective_target = min(config.target_duration, effective_max)
     costs = [math.inf] * count
     previous: list[int | None] = [None] * count
@@ -246,6 +263,32 @@ def _select_boundaries(
     return list(reversed(selected))
 
 
+def _merge_short_pause_boundaries(
+    selected: list[CutCandidate], config: PipelineConfig
+) -> tuple[list[CutCandidate], int, int]:
+    """Drop short-pause boundaries unless doing so would violate max duration."""
+    if len(selected) <= 2:
+        return selected, 0, 0
+    effective_max = max(
+        config.min_duration, config.max_duration - config.leading_silence - config.trailing_silence
+    )
+    kept = [selected[0]]
+    merged = 0
+    forced = 0
+    for index, candidate in enumerate(selected[1:-1], start=1):
+        if candidate.pause_duration >= config.hard_merge_silence:
+            kept.append(candidate)
+            continue
+        next_boundary = selected[index + 1]
+        if next_boundary.time - kept[-1].time <= effective_max + 1e-6:
+            merged += 1
+            continue
+        kept.append(candidate)
+        forced += 1
+    kept.append(selected[-1])
+    return kept, merged, forced
+
+
 def detect_intervals(
     path: Path,
     config: PipelineConfig,
@@ -266,14 +309,14 @@ def detect_intervals(
     # Trim only confidently non-speech leading/trailing material, retaining the
     # configured boundary padding around the first and last detected speech.
     if speech_regions:
-        timeline_start = max(0.0, speech_regions[0][0] - config.boundary_padding)
-        timeline_end = min(duration, speech_regions[-1][1] + config.boundary_padding)
+        timeline_start = max(0.0, speech_regions[0][0] - config.leading_silence)
+        timeline_end = min(duration, speech_regions[-1][1] + config.trailing_silence)
     else:
         active = [index for index, level in enumerate(levels) if level > threshold]
         if not active:
             raise ValueError("No active audio was found")
-        timeline_start = max(0.0, active[0] * frame_seconds - config.boundary_padding)
-        timeline_end = min(duration, (active[-1] + 1) * frame_seconds + config.boundary_padding)
+        timeline_start = max(0.0, active[0] * frame_seconds - config.leading_silence)
+        timeline_end = min(duration, (active[-1] + 1) * frame_seconds + config.trailing_silence)
     if timeline_end <= timeline_start:
         raise ValueError("Detected speech interval is empty")
 
@@ -325,6 +368,7 @@ def detect_intervals(
         frame_seconds,
         rate,
         total_samples,
+        threshold,
         config,
     )
     all_candidates = [
@@ -335,13 +379,28 @@ def detect_intervals(
     ]
     all_candidates = _deduplicate_candidates(all_candidates, frame_seconds)
     selected = _select_boundaries(all_candidates, config)
+    selected, merged_short_boundaries, forced_boundaries = _merge_short_pause_boundaries(
+        selected, config
+    )
 
     boundary_pairs: list[tuple[float, float]] = [(timeline_start, timeline_start)]
+    # (padding for previous end, padding for next start). Pause padding is
+    # capped by the detected pause so it cannot cross into adjacent speech.
+    boundary_paddings: list[tuple[float, float]] = [(0.0, 0.0)]
     selected_pause_count = 0
     fallback_count = 0
     for candidate in selected[1:-1]:
         if candidate.kind != "pause" or candidate.pause_duration <= config.max_silence_kept:
             boundary_pairs.append((candidate.time, candidate.time))
+            if candidate.kind == "pause":
+                boundary_paddings.append(
+                    (
+                        min(config.trailing_silence, candidate.pause_end - candidate.time),
+                        min(config.leading_silence, candidate.time - candidate.pause_start),
+                    )
+                )
+            else:
+                boundary_paddings.append((config.trailing_silence, config.leading_silence))
             fallback_count += candidate.kind == "fallback"
             selected_pause_count += candidate.kind == "pause"
             continue
@@ -373,16 +432,24 @@ def detect_intervals(
         boundary_pairs.append(
             (min(left_sample, right_sample) / rate, max(left_sample, right_sample) / rate)
         )
+        left_boundary, right_boundary = boundary_pairs[-1]
+        boundary_paddings.append(
+            (
+                min(config.trailing_silence, max(0.0, candidate.pause_end - left_boundary)),
+                min(config.leading_silence, max(0.0, right_boundary - candidate.pause_start)),
+            )
+        )
     boundary_pairs.append((timeline_end, timeline_end))
+    boundary_paddings.append((0.0, 0.0))
 
     intervals: list[AcousticInterval] = []
     for index in range(len(boundary_pairs) - 1):
         previous_right = boundary_pairs[index][1]
         next_left = boundary_pairs[index + 1][0]
-        start = max(timeline_start, previous_right - (config.boundary_padding if index else 0))
+        start = max(timeline_start, previous_right - boundary_paddings[index][1])
         end = min(
             timeline_end,
-            next_left + (config.boundary_padding if index + 1 < len(boundary_pairs) - 1 else 0),
+            next_left + boundary_paddings[index + 1][0],
         )
         if end <= start:
             raise RuntimeError("Segmentation produced an invalid interval")
@@ -407,6 +474,8 @@ def detect_intervals(
         "pause_candidates": len(pause_candidates),
         "selected_pause_boundaries": selected_pause_count,
         "fallback_boundaries": fallback_count,
+        "merged_short_pause_boundaries": merged_short_boundaries,
+        "forced_boundaries": forced_boundaries,
         "candidate_source": "vad+rms" if speech_regions is not None else "rms-only",
         "rejected_vad_gaps": rejected_vad_gaps,
         "trimmed_leading_seconds": round(timeline_start, 3),
@@ -414,4 +483,6 @@ def detect_intervals(
         "removed_long_silence_seconds": round(
             sum(max(0.0, right - left) for left, right in boundary_pairs), 3
         ),
+        "leading_silence_seconds": config.leading_silence,
+        "trailing_silence_seconds": config.trailing_silence,
     }

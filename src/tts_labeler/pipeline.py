@@ -235,7 +235,7 @@ class LabelingPipeline:
         validate_timeline(
             cues,
             wav_duration(master_wav),
-            max_overlap=self.config.boundary_padding * 2 + 0.01,
+            max_overlap=self.config.leading_silence + self.config.trailing_silence + 0.01,
         )
         return self.export_dataset(
             audio,
@@ -286,6 +286,7 @@ class LabelingPipeline:
         document_guided: bool = True,
     ) -> list[OutputSegment]:
         segments: list[OutputSegment] = []
+        source_stem = audio.stem.strip() or "audio"
         for index, cue in enumerate(cues):
             reasons: list[str] = []
             if cue.duration < self.config.min_duration:
@@ -356,8 +357,9 @@ class LabelingPipeline:
                     > self.config.max_foreign_speech_ratio
                 ):
                     segment.reasons.append("mixed_speaker")
+            relative_clip = Path(source_stem) / f"{source_stem}_{index + 1}.wav"
             directory = output / ("wavs" if segment.accepted else "rejected")
-            target = directory / f"{index:06d}.wav"
+            target = directory / relative_clip
             export_interval(cut_source or audio, target, cue.start, cue.end, self.config)
             metrics = analyze_wav_quality(target)
             segment.audio_metrics = metrics
@@ -369,7 +371,7 @@ class LabelingPipeline:
                 segment.reasons.append("audio_dc_offset")
             segment.accepted = not segment.reasons
             final_directory = output / ("wavs" if segment.accepted else "rejected")
-            final_target = final_directory / f"{index:06d}.wav"
+            final_target = final_directory / relative_clip
             if final_target != target:
                 final_target.parent.mkdir(parents=True, exist_ok=True)
                 target.replace(final_target)

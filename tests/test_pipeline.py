@@ -56,7 +56,8 @@ def test_end_to_end_acoustic_srt_alignment_and_export() -> None:
             target_duration=1.0,
             max_duration=2.0,
             min_silence_duration=0.3,
-            boundary_padding=0.05,
+            leading_silence=0.05,
+            trailing_silence=0.05,
             min_match_score=0.5,
             min_text_coverage=0.5,
             vad_backend="off",
@@ -69,6 +70,10 @@ def test_end_to_end_acoustic_srt_alignment_and_export() -> None:
         assert [cue.text for cue in raw] == ["Hello word", "Good bye"]
         assert [cue.text for cue in aligned] == ["Hello world!", "Goodbye."]
         assert [segment.text for segment in segments] == ["Hello world!", "Goodbye."]
+        assert [segment.audio for segment in segments] == [
+            "wavs/source/source_1.wav",
+            "wavs/source/source_2.wav",
+        ]
         assert all((output / segment.audio).is_file() for segment in segments)
         assert (output / "work" / "master.wav").is_file()
         pipeline.run(audio, document, output)
@@ -110,7 +115,8 @@ def test_run_without_document_uses_raw_srt() -> None:
         _write_source(audio)
         config = PipelineConfig(
             min_duration=0.4, target_duration=1.0, max_duration=2.0,
-            min_silence_duration=0.3, boundary_padding=0.05, vad_backend="off",
+            min_silence_duration=0.3, leading_silence=0.05,
+            trailing_silence=0.05, vad_backend="off",
         )
         segments = LabelingPipeline(config, _SequenceASR()).run(audio, None, output)
         assert [cue.text for cue in read_srt(output / "raw.srt")] == ["Hello word", "Good bye"]

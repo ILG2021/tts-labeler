@@ -100,7 +100,9 @@ VAD 判定为非语音
 
 ### 6. 首尾处理
 
-系统会根据 VAD 结果删除多余的前导和尾部静音，同时保留可配置的安全边缘，避免截断吸气、尾音和爆破音释放。
+系统会根据 VAD 结果删除多余的前导和尾部静音，同时默认保留约 120 ms 句首静音和 250 ms 句尾静音，避免截断吸气、尾音和爆破音释放。该策略固化为内部默认值，不需要命令行参数；原始停顿不足时只保留实际存在的自然静音，不跨越相邻语音，也不自动补数字静音。
+
+低于 250 ms 的停顿默认视为句内停顿并合并两侧语音。只有合并后会超过最长片段限制时才保留该切点，并在声学报告中计入 `forced_boundaries`；被自动删除的短停顿边界计入 `merged_short_pause_boundaries`。
 
 ## 文档与 SRT 对齐
 
@@ -218,7 +220,6 @@ tts-labeler run input.wav output --document document.txt `
   --min-silence 0.32 `
   --silence-margin-db 10 `
   --silence-dbfs -38 `
-  --boundary-padding 0.08 `
   --max-silence-kept 0.5 `
   --min-duration 1.5 `
   --target-duration 8 `
@@ -234,7 +235,6 @@ tts-labeler run input.wav output --document document.txt `
 | `--vad-threshold` | `0.5` | Silero 语音概率阈值 |
 | `--vad-min-speech` | `0.10` | 最短语音持续时间，单位秒 |
 | `--min-silence` | `0.32` | 可用于切分的最短停顿，单位秒 |
-| `--boundary-padding` | `0.08` | 切点两侧安全边缘，单位秒 |
 | `--max-silence-kept` | `0.5` | 长静音两侧最多参与保留的范围 |
 | `--min-duration` | `1.5` | 最短片段时长 |
 | `--target-duration` | `8` | 优化器倾向的目标时长 |
@@ -314,7 +314,11 @@ output/
 ├── raw.srt
 ├── aligned.srt
 ├── wavs/                       自动验收通过的 WAV
-├── rejected/                   自动隔离的 WAV
+│   └── 文件1/
+│       ├── 文件1_1.wav
+│       ├── 文件1_2.wav
+│       └── 文件1_3.wav
+├── rejected/                   自动隔离的 WAV，使用同样的源文件名目录和编号
 ├── metadata.csv                audio|text
 ├── manifest.jsonl              每段完整信息和质量指标
 ├── report.json                 本次任务配置和汇总
@@ -330,8 +334,8 @@ output/
 `metadata.csv`：
 
 ```text
-wavs/000000.wav|对应的标准文档文本
-wavs/000001.wav|下一段标准文档文本
+wavs/文件1/文件1_1.wav|对应的标准文档文本
+wavs/文件1/文件1_2.wav|下一段标准文档文本
 ```
 
 `manifest.jsonl` 每段包含：

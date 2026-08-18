@@ -99,7 +99,9 @@ class PipelineConfig:
     min_silence_duration: float = 0.32
     silence_margin_db: float = 10.0
     absolute_silence_dbfs: float = -38.0
-    boundary_padding: float = 0.08
+    leading_silence: float = 0.12
+    trailing_silence: float = 0.25
+    hard_merge_silence: float = 0.25
     max_silence_kept: float = 0.5
     vad_backend: str = "silero"
     vad_threshold: float = 0.5
@@ -140,10 +142,15 @@ class PipelineConfig:
             raise ValueError("analysis_frame_ms must be positive")
         if self.min_silence_duration <= self.analysis_frame_ms / 1000:
             raise ValueError("min_silence_duration must exceed one analysis frame")
-        if self.max_silence_kept <= 0 or self.boundary_padding < 0:
-            raise ValueError("Silence retention must be positive and padding non-negative")
-        if self.max_duration - 2 * self.boundary_padding < self.min_duration:
-            raise ValueError("Duration range is too narrow for the configured boundary padding")
+        if (
+            self.max_silence_kept <= 0
+            or self.leading_silence < 0
+            or self.trailing_silence < 0
+            or self.hard_merge_silence < 0
+        ):
+            raise ValueError("Silence retention must be positive and edge silence non-negative")
+        if self.max_duration - self.leading_silence - self.trailing_silence < self.min_duration:
+            raise ValueError("Duration range is too narrow for the configured edge silence")
         if self.vad_backend not in {"silero", "off"}:
             raise ValueError("vad_backend must be 'silero' or 'off'")
         if not 0 < self.vad_threshold < 1:

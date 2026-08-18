@@ -4,7 +4,7 @@ import wave
 from array import array
 from pathlib import Path
 
-from tts_labeler.acoustic import detect_intervals
+from tts_labeler.acoustic import CutCandidate, _merge_short_pause_boundaries, detect_intervals
 from tts_labeler.models import PipelineConfig
 
 
@@ -35,7 +35,8 @@ def test_acoustic_split_finds_middle_silence() -> None:
             target_duration=1.0,
             max_duration=2.0,
             min_silence_duration=0.3,
-            boundary_padding=0.05,
+            leading_silence=0.05,
+            trailing_silence=0.05,
             max_silence_kept=1.0,
         )
         intervals, report = detect_intervals(path, config)
@@ -62,7 +63,8 @@ def test_hybrid_vad_rms_removes_middle_of_long_silence() -> None:
             target_duration=1.0,
             max_duration=3.0,
             min_silence_duration=0.3,
-            boundary_padding=0.05,
+            leading_silence=0.05,
+            trailing_silence=0.05,
             max_silence_kept=0.3,
         )
         intervals, report = detect_intervals(
@@ -133,7 +135,8 @@ def test_vad_bounds_trim_leading_and_trailing_silence() -> None:
             min_duration=0.5,
             target_duration=2.0,
             max_duration=4.0,
-            boundary_padding=0.08,
+            leading_silence=0.08,
+            trailing_silence=0.08,
         )
         intervals, report = detect_intervals(path, config, speech_regions=[(1.0, 3.0)])
     assert len(intervals) == 1
@@ -141,3 +144,58 @@ def test_vad_bounds_trim_leading_and_trailing_silence() -> None:
     assert 3.05 <= intervals[0].end <= 3.10
     assert report["trimmed_leading_seconds"] > 0.9
     assert report["trimmed_trailing_seconds"] > 0.9
+
+
+def test_pause_padding_is_retained_without_crossing_adjacent_speech() -> None:
+    rate = 16000
+    samples = _tone(rate, 1.0)
+    samples.extend(array("h", [0]) * round(rate * 0.4))
+    samples.extend(_tone(rate, 1.0))
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "short-pause.wav"
+        with wave.open(str(path), "wb") as handle:
+            handle.setnchannels(1)
+            handle.setsampwidth(2)
+            handle.setframerate(rate)
+            handle.writeframes(samples.tobytes())
+        config = PipelineConfig(
+            min_duration=0.4,
+            target_duration=1.0,
+            max_duration=2.0,
+            min_silence_duration=0.3,
+            leading_silence=0.2,
+            trailing_silence=0.2,
+            vad_backend="off",
+        )
+        intervals, report = detect_intervals(path, config)
+    assert len(intervals) == 2
+    assert 1.15 <= intervals[0].end <= 1.401
+    assert 0.999 <= intervals[1].start <= 1.25
+    assert report["leading_silence_seconds"] == 0.2
+    assert report["trailing_silence_seconds"] == 0.2
+
+
+def test_short_pause_boundary_is_merged_when_duration_allows() -> None:
+    config = PipelineConfig(min_duration=1.0, target_duration=8.0, max_duration=18.0)
+    selected = [
+        CutCandidate(0.0, 0.0, 0.0, -100.0, "start"),
+        CutCandidate(7.0, 6.9, 7.1, -50.0, "fallback"),
+        CutCandidate(14.0, 14.0, 14.0, -100.0, "end"),
+    ]
+    merged, merged_count, forced_count = _merge_short_pause_boundaries(selected, config)
+    assert [item.time for item in merged] == [0.0, 14.0]
+    assert merged_count == 1
+    assert forced_count == 0
+
+
+def test_short_pause_boundary_is_forced_when_merge_would_be_too_long() -> None:
+    config = PipelineConfig(min_duration=1.0, target_duration=8.0, max_duration=12.0)
+    selected = [
+        CutCandidate(0.0, 0.0, 0.0, -100.0, "start"),
+        CutCandidate(8.0, 7.9, 8.1, -50.0, "fallback"),
+        CutCandidate(16.0, 16.0, 16.0, -100.0, "end"),
+    ]
+    merged, merged_count, forced_count = _merge_short_pause_boundaries(selected, config)
+    assert [item.time for item in merged] == [0.0, 8.0, 16.0]
+    assert merged_count == 0
+    assert forced_count == 1
