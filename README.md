@@ -158,7 +158,7 @@ pip install -e ".[industrial,dev]"
 ## 快速开始
 
 ```powershell
-tts-labeler run input.wav document.txt output `
+tts-labeler run input.wav output --document document.txt `
   --backend faster-whisper `
   --model large-v3 `
   --language auto `
@@ -169,7 +169,7 @@ tts-labeler run input.wav document.txt output `
 需要详细日志时，`--verbose` 放在子命令之前：
 
 ```powershell
-tts-labeler --verbose run input.wav document.txt output
+tts-labeler --verbose run input.wav output --document document.txt
 ```
 
 ### 过滤其他说话人
@@ -178,7 +178,7 @@ tts-labeler --verbose run input.wav document.txt output
 
 ```powershell
 $env:HF_TOKEN="hf_..."
-tts-labeler run input.wav document.txt output `
+tts-labeler run input.wav output --document document.txt `
   --speaker-backend pyannote `
   --speaker-reference target-speaker.wav
 ```
@@ -186,15 +186,15 @@ tts-labeler run input.wav document.txt output `
 不提供 `--speaker-reference` 时，系统将语音总时长最大的说话人簇视为目标说话人：
 
 ```powershell
-tts-labeler run input.wav document.txt output --speaker-backend pyannote
+tts-labeler run input.wav output --document document.txt --speaker-backend pyannote
 ```
 
 说话人分析只用于质量门控，不改变声学切点。其他说话人超过 0.25 秒或占有效语音超过 5% 时，片段进入 `rejected/` 并标记为 `mixed_speaker`。人工修改 SRT 后再次执行 `export` 时，也应传入相同的说话人参数。
 
-没有对照文档时，可以跳过文档对齐，直接使用 ASR 文本：
+没有对照文档时只传入音频和输出目录，系统会自动跳过文档对齐并直接使用 ASR 文本：
 
 ```powershell
-tts-labeler run input.wav output --no-document
+tts-labeler run input.wav output
 ```
 
 该模式仍执行声学切分、ASR、音频质量检查和数据集导出，生成 `raw.srt`，但不会生成 `aligned.srt`。建议先在字幕软件中核对 `raw.srt`，再使用 `export` 导出最终数据集。
@@ -202,7 +202,7 @@ tts-labeler run input.wav output --no-document
 ## 常用切分参数
 
 ```powershell
-tts-labeler run input.wav document.txt output `
+tts-labeler run input.wav output --document document.txt `
   --vad silero `
   --vad-threshold 0.5 `
   --vad-min-speech 0.10 `
@@ -246,7 +246,7 @@ tts-labeler run input.wav document.txt output `
 `--model` 可以是模型名称、兼容的 Hugging Face ID 或本地 CTranslate2 目录：
 
 ```powershell
-tts-labeler run input.wav document.txt output `
+tts-labeler run input.wav output --document document.txt `
   --backend faster-whisper `
   --model D:\models\my-whisper-ct2 `
   --language auto `
@@ -257,7 +257,7 @@ tts-labeler run input.wav document.txt output `
 ### Transformers 微调检查点
 
 ```powershell
-tts-labeler run input.wav document.txt output `
+tts-labeler run input.wav output --document document.txt `
   --backend transformers `
   --model organization/my-finetuned-whisper `
   --language ar `

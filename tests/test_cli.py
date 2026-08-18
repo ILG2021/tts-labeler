@@ -6,8 +6,9 @@ def test_custom_transformers_model_arguments() -> None:
         [
             "run",
             "audio.wav",
-            "document.txt",
             "output",
+            "--document",
+            "document.txt",
             "--backend",
             "transformers",
             "--model",
@@ -23,7 +24,7 @@ def test_custom_transformers_model_arguments() -> None:
 
 def test_local_ctranslate2_model_arguments() -> None:
     args = build_parser().parse_args(
-        ["run", "audio.wav", "document.txt", "output", "--model", "models/custom-ct2"]
+        ["run", "audio.wav", "output", "--document", "document.txt", "--model", "models/custom-ct2"]
     )
     assert args.backend == "faster-whisper"
     assert args.model == "models/custom-ct2"
@@ -37,25 +38,32 @@ def test_export_edited_srt_arguments() -> None:
 
 
 def test_industrial_vad_is_default_and_fallback_is_explicit() -> None:
-    default = build_parser().parse_args(["run", "audio.wav", "doc.txt", "out"])
+    default = build_parser().parse_args(["run", "audio.wav", "out", "--document", "doc.txt"])
     fallback = build_parser().parse_args(
-        ["run", "audio.wav", "doc.txt", "out", "--vad", "off"]
+        ["run", "audio.wav", "out", "--document", "doc.txt", "--vad", "off"]
     )
     assert default.vad == "silero"
     assert fallback.vad == "off"
 
 
-def test_no_document_run_arguments() -> None:
-    args = build_parser().parse_args(["run", "audio.wav", "output", "--no-document"])
-    assert args.no_document is True
-    assert str(args.document) == "output"
-    assert args.output is None
+def test_run_without_document_uses_second_path_as_output() -> None:
+    args = build_parser().parse_args(["run", "audio.wav", "output"])
+    assert args.document is None
+    assert str(args.output) == "output"
+
+
+def test_run_with_document_preserves_three_paths() -> None:
+    args = build_parser().parse_args(
+        ["run", "audio.wav", "output", "--document", "document.txt"]
+    )
+    assert str(args.document) == "document.txt"
+    assert str(args.output) == "output"
 
 
 def test_pyannote_speaker_arguments() -> None:
     args = build_parser().parse_args(
         [
-            "run", "audio.wav", "doc.txt", "out",
+            "run", "audio.wav", "out", "--document", "doc.txt",
             "--speaker-backend", "pyannote",
             "--speaker-reference", "target.wav",
         ]

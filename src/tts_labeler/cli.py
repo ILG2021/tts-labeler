@@ -80,12 +80,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = subparsers.add_parser("run", help="Segment, transcribe, align SRT, and export")
     run.add_argument("audio", type=Path)
-    run.add_argument("document", type=Path, nargs="?")
-    run.add_argument("output", type=Path, nargs="?")
+    run.add_argument("output", type=Path)
     run.add_argument(
-        "--no-document",
-        action="store_true",
-        help="Skip document alignment and use the generated raw.srt text",
+        "--document",
+        type=Path,
+        help="Optional reference document; alignment is skipped when omitted",
     )
     _add_output_options(run)
     _add_run_options(run)
@@ -146,16 +145,6 @@ def _config(args: argparse.Namespace) -> PipelineConfig:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    if args.command == "run":
-        if args.no_document:
-            # With two positional values, argparse places the output path in
-            # `document`; normalize that ergonomic form here.
-            if args.output is None and args.document is not None:
-                args.output, args.document = args.document, None
-            if args.output is None:
-                raise SystemExit("run --no-document requires: audio output")
-        elif args.document is None or args.output is None:
-            raise SystemExit("run requires: audio document output (or audio output --no-document)")
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
